@@ -1,0 +1,230 @@
+---
+title: "Regresión lineal múltiple en R: estimación, supuestos y diagnóstico"
+description: "Modelo OLS con longley + chequeo de hipótesis: multicolinealidad, heterocedasticidad, autocorrelación y normalidad."
+author: "Hugo Sánchez Nieto"
+date: "2026-01"
+categories: [R, Estadística, Regresión]
+image: "thumbnail.png"
+---
+
+## Objetivo
+
+Ajustar un modelo de **regresión lineal múltiple** por **Mínimos Cuadrados Ordinarios (OLS)** y comprobar las hipótesis básicas del modelo
+(misma lógica que en el post del profesor: estimación → diagnóstico → posibles correcciones). 
+
+Trabajaremos con el dataset **longley** (incluido en R), que se usa como ejemplo por su **alta colinealidad**.
+
+## Preparación
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+data(longley)
+
+library(lmtest)
+library(nortest)
+library(car)
+
+```
+
+1) Estimación del modelo (OLS)
+
+En el ejemplo del profesor se ajusta:
+
+Employed = \beta_0 + \beta_1 \cdot GNP.deflator + \beta_2 \cdot GNP + \beta_3 \cdot Population + u
+
+```{r}
+reg <- lm(Employed ~ GNP.deflator + GNP + Population, data = longley)
+summary(reg)
+```
+
+Qué miro en summary(reg)
+
+- Significación individual de coeficientes (t y p-value).
+
+- R² y R² ajustado.
+
+- Test F de significación conjunta.
+
+Y como extra...
+
+```{r}
+coef(reg)          # coeficientes estimados
+confint(reg)       # IC de coeficientes
+summary(reg$residuals)
+head(reg$fitted.values)  # valores ajustados
+
+summary(reg)[[6]]  # sigma (error estándar residual)
+summary(reg)[[8]]  # R^2
+summary(reg)[[9]]  # R^2 ajustado
+```
+
+## 2) Diagnóstico de hipótesis básicas
+
+### 2.1 Multicolinealidad
+
+En el temario se proponen 3 vías:
+
+- determinante de la matriz de correlaciones (cerca de 0 ⇒ relación lineal alta)
+
+- VIF (valores > 10 preocupante)
+
+- Número de condición (valores > 30 preocupante)
+
+```{r}
+X <- longley[, c("GNP.deflator", "GNP", "Population")]
+
+det(cor(X))        # determinante de la matriz de correlaciones
+vif(reg)           # VIF
+kappa(model.matrix(reg))  # número de condición (aprox.)
+```
+
+### 2.2 Heterocedasticidad
+
+En este caso:
+
+- métodos gráficos con residuos y residuos^2
+
+- tests analíticos (White, Breusch–Pagan, Goldfeld–Quandt) con lmtest
+
+```{r}
+e <- reg$residuals
+e2 <- e^2
+
+plot(e, type = "b", main = "Residuos por observación", ylab = "e", xlab = "i")
+abline(h = 0, lwd = 2)
+
+plot(reg$fitted.values, e, main = "Residuos vs Ajustados", xlab = "ŷ", ylab = "e")
+abline(h = 0, lwd = 2)
+```
+
+```{r}
+decision <- function(p, alpha = 0.05, h0 = "H0") {
+  if (is.na(p)) return("p-value NA")
+  if (p < alpha) paste("Rechazo", h0, "(p <", alpha, ")")
+  else paste("No rechazo", h0, "(p ≥", alpha, ")")
+}
+```
+
+Breusch–Pagan y Goldfeld–Quandt (lmtest):
+```{r}
+bp <- bptest(reg)
+gq <- gqtest(reg, fraction = 1/3, order.by = longley$GNP)
+
+bp
+cat(decision(bp$p.value, h0 = "homocedasticidad"), "\n")
+
+gq
+cat(decision(gq$p.value, h0 = "homocedasticidad"), "\n")
+
+```
+
+White
+```{r}
+# Construcción de términos (cuadrados e interacciones)
+GNP.deflator <- longley$GNP.deflator
+GNP <- longley$GNP
+Population <- longley$Population
+
+aux <- lm(e2 ~ GNP.deflator + GNP + Population +
+            I(GNP.deflator^2) + I(GNP^2) + I(Population^2) +
+            I(GNP.deflator*GNP) + I(GNP.deflator*Population) + I(GNP*Population))
+
+R2_aux <- summary(aux)[[8]]
+n <- nrow(longley)
+
+stat <- n * R2_aux
+df <- summary(aux)[[10]][[2]]   # g.l. numerador en el aux (como en el PDF)
+crit <- qchisq(0.95, df)
+p_white <- pchisq(stat, df = df, lower.tail = FALSE)
+c(stat = stat, df = df, p_value = p_white)
+cat(decision(p_white, h0 = "homocedasticidad (White)"), "\n")
+
+
+c(stat = stat, crit = crit)
+```
+
+### 2.3 Autocorrelación
+
+En el temario se detecta:
+
+- gráfico de residuos por orden
+
+- gráfico residuos vs retardo (lag)
+
+- contraste Durbin–Watson (dwtest).
+
+```{r}
+# lag 1 de residuos
+e_lag <- e[-length(e)]
+e_now <- e[-1]
+
+plot(e_now, e_lag, main = "Residuos vs retardo (lag 1)", xlab = "e_t", ylab = "e_{t-1}")
+abline(lm(e_lag ~ e_now), lwd = 2)
+
+dwtest(reg)
+
+dw <- dwtest(reg)
+dw
+cat(decision(dw$p.value, h0 = "incorrelación (DW)"), "\n")
+
+```
+
+### 2.4 Normalidad de residuos
+
+En el temario se aplican Kolmogorov–Smirnov, Shapiro–Wilk y Lilliefors.
+
+```{r}
+ks.test(e, pnorm, mean(e), sd(e))
+shapiro.test(e)
+lillie.test(e)
+
+ks <- ks.test(e, pnorm, mean(e), sd(e))
+sw <- shapiro.test(e)
+lf <- lillie.test(e)
+
+ks; cat(decision(ks$p.value, h0="normalidad (KS)"), "\n")
+sw; cat(decision(sw$p.value, h0="normalidad (Shapiro)"), "\n")
+lf; cat(decision(lf$p.value, h0="normalidad (Lilliefors)"), "\n")
+
+```
+
+## 3) Correcciones (opcional / “por si sale mal”)
+
+### 3.1 Corrección de heterocedasticidad (WLS)
+
+Si se conoce un patrón de varianza, el profesor muestra el uso de weights= en lm.
+
+```{r}
+#| eval: false
+reg_wls <- lm(Employed ~ GNP.deflator + GNP + Population, data = longley, weights = GNP)
+summary(reg_wls)
+```
+
+### 3.2 Corrección de autocorrelación (Prais–Winsten / Cochrane–Orcutt)
+
+El temario enseña ambas.
+
+```{r}
+#| eval: false
+# install.packages(c("prais", "orcutt"))
+library(prais)
+library(orcutt)
+
+reg_pw <- prais_winsten(Employed ~ GNP.deflator + GNP + Population,
+                        data = longley, index = 1:nrow(longley))
+summary(reg_pw)
+
+reg_co <- cochrane.orcutt(reg)
+summary(reg_co)
+```
+
+
+## Conclusiones
+
+1. Ajustamos el modelo OLS con lm() y leímos summary() como en los ejemplos. 
+
+2. Revisamos hipótesis: multicolinealidad (det/VIF/condición), heterocedasticidad (BP/GQ/White), autocorrelación (DW), normalidad (KS/Shapiro/Lilliefors).
+
+3. Si hay incumplimientos, dejamos preparadas correcciones típicas (WLS y ajustes por autocorrelación).

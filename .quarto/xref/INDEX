@@ -1,0 +1,29 @@
+{
+  "about.qmd": {
+    "about.html": "2a07b295"
+  },
+  "posts/post-with-code/index.qmd": {
+    "index.html": "169ac13e"
+  },
+  "posts/welcome/index.qmd": {
+    "index.html": "8a9348d1"
+  },
+  "posts/estadistica-descriptiva/index.qmd": {
+    "index.html": "b5772bda"
+  },
+  "index.qmd": {
+    "index.html": "01c2b8ba"
+  },
+  "posts/regresion-lineal-multiple/index.qmd": {
+    "index.html": "8411e335"
+  },
+  "posts/cv.qmd": {
+    "cv.html": "b480600d"
+  },
+  "cv.qmd": {
+    "cv.html": "b69269f2"
+  },
+  "posts/inferencia/index.qmd": {
+    "index.html": "15260444"
+  }
+}

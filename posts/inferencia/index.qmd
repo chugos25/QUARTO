@@ -1,0 +1,203 @@
+---
+title: "Inferencia estadística en R: confianza y significación"
+description: "Contrastes sobre media y varianza (una y dos poblaciones) + normalidad y aleatoriedad."
+author: "Hugo Sánchez Nieto"
+date: "2026-01"
+categories: [R, Estadística, Inferencia]
+image: "thumbnail.png"
+---
+
+## Objetivo
+
+Realizar inferencia sobre **media y varianza** en **una** y **dos poblaciones**, usando `t.test()` y `var.test()`, y cerrar con comprobaciones típicas: **normalidad** y **aleatoriedad**.
+
+------------------------------------------------------------------------
+
+## Preparación
+
+Usaremos el dataset `cars` (incluido en R).
+
+```{r}
+#| label: setup
+#| message: false
+#| warning: false
+
+data(cars)
+speed <- cars$speed
+dist  <- cars$dist
+
+```
+
+```{r}
+#| message: false
+#| warning: false
+library(nortest)  # lillie.test
+library(tseries)  # runs.test
+library(car)      # leveneTest
+```
+
+## 1) p-valor y decisión
+
+El p-valor se usa para decidir si rechazamos H0 al nivel de significación elegido (10%, 5%, 1%).
+
+Creo un helper para imprimir decisiones de forma uniforme:
+
+```{r}
+decision <- function(p, alpha = 0.05, h0 = "H0") {
+  if (is.na(p)) return("p-value NA")
+  if (p < alpha) paste("Rechazo", h0, "(p <", alpha, ")")
+  else paste("No rechazo", h0, "(p ≥", alpha, ")")
+}
+```
+
+## 2) Inferencia para una población (media)
+
+Ejemplo clásico: contrastar si la media de speed es 17, con contrastes bilateral y unilaterales (greater/less).
+
+```{r}
+
+```
+
+```{r}
+t_2colas <- t.test(speed, mu = 17)  # por defecto: two.sided
+t_mayor  <- t.test(speed, mu = 17, alternative = "greater")
+t_menor  <- t.test(speed, mu = 17, alternative = "less")
+
+t_2colas
+cat(decision(t_2colas$p.value, h0 = "media = 17"), "\n\n")
+
+t_mayor
+cat(decision(t_mayor$p.value, h0 = "media = 17 (alt: mayor)"), "\n\n")
+
+t_menor
+cat(decision(t_menor$p.value, h0 = "media = 17 (alt: menor)"), "\n")
+
+```
+
+Región de rechazo
+
+En el temario también compara el valor experimental con el teórico (qt)
+
+```{r}
+qt(0.975, df = length(speed) - 1)  # dos colas al 5%
+qt(0.95,  df = length(speed) - 1)  # una cola (greater) al 5%
+qt(0.05,  df = length(speed) - 1)  # una cola (less) al 5%
+```
+
+## 3) Inferencia para dos poblaciones (varianzas y medias)
+
+### 3.1 Igualdad de varianzas (F-test)
+
+Comparamos speed y dist con var.test(), tanto bilateral como unilateral (por ejemplo, ratio \< 1)
+
+```{r}
+var(speed); var(dist)
+
+f_2colas <- var.test(speed, dist)
+f_menor  <- var.test(speed, dist, alternative = "less")
+
+f_2colas
+cat(decision(f_2colas$p.value, h0 = "varianzas iguales (two.sided)"), "\n\n")
+
+f_menor
+cat(decision(f_menor$p.value, h0 = "ratio de varianzas = 1 (alt: < 1)"), "\n")
+```
+
+Región crítica
+
+```{r}
+qf(0.025, df1 = length(speed)-1, df2 = length(dist)-1)
+qf(0.975, df1 = length(speed)-1, df2 = length(dist)-1)
+```
+
+### 3.2 Igualdad de medias (t-test para dos muestras)
+
+Si no asumimos varianzas iguales, usamos Welch (var.equal = FALSE, que es el valor por defecto)
+
+```{r}
+t2_2colas <- t.test(speed, dist, var.equal = FALSE)
+t2_2colas
+cat(decision(t2_2colas$p.value, h0 = "medias iguales (Welch)"), "\n")
+```
+
+Unilateral (por ejemplo, media de speed menor que dist):
+
+```{r}
+t2_menor <- t.test(speed, dist, var.equal = FALSE, alternative = "less")
+t2_menor
+cat(decision(t2_menor$p.value, h0 = "medias iguales (alt: speed < dist)"), "\n")
+```
+
+Región crítica
+
+```{r}
+qt(0.975, df = t2_2colas$parameter)  # df de Welch
+```
+
+## 4) Inferencia con más de dos grupos (ANOVA) + homogeneidad de varianzas
+
+El temario construye un factor con 3 niveles (0,1,2) y hace:
+
+-   resúmenes por grupo (tapply)
+
+-   ANOVA (aov)
+
+-   Levene (homogeneidad de varianzas)
+
+-   TukeyHSD (comparaciones por pares)
+
+```{r}
+set.seed(2022)
+terna <- rbinom(length(speed), 2, 0.5)
+factores_terna <- factor(terna)
+
+table(factores_terna)
+tapply(speed, factores_terna, summary)
+tapply(speed, factores_terna, var)
+
+anova_speed <- aov(speed ~ factores_terna)
+
+leveneTest(speed ~ factores_terna, center = mean)
+summary(anova_speed)
+TukeyHSD(anova_speed)
+```
+
+No rechazo homogeneidad de varianzas (Levene, p=0.828). No rechazo igualdad de medias (ANOVA, p=0.236).
+
+## 5) Hipótesis de partida: normalidad y aleatoriedad
+
+### 5.1 Normalidad
+
+En el temario se aplican KS, Shapiro y Lilliefors, y se recuerda que si p-valor \> 0.05 no se rechaza normalidad.
+
+```{r}
+ks <- ks.test(speed, pnorm, mean(speed), sd(speed))
+sw <- shapiro.test(speed)
+lf <- lillie.test(speed)
+
+ks; cat(decision(ks$p.value, h0="normalidad (KS)"), "\n\n")
+sw; cat(decision(sw$p.value, h0="normalidad (Shapiro)"), "\n\n")
+lf; cat(decision(lf$p.value, h0="normalidad (Lilliefors)"), "\n")
+```
+
+### 5.2 Aleatoriedad (test de rachas)
+
+Se contrasta H0: “hay aleatoriedad” usando runs.test() sobre la variable binaria speed \> median(speed)
+
+```{r}
+runs <- runs.test(as.factor(speed > median(speed)))
+runs
+cat(decision(runs$p.value, h0="aleatoriedad (Runs test)"), "\n")
+```
+
+El runs test depende del orden de la serie; con datos ordenados o con estructura temporal suele rechazar aleatoriedad.
+
+## Conclusiones
+
+-   t.test() y var.test() permiten inferencia sobre media/varianza con hipótesis bilateral o unilateral mediante alternative.
+
+-   El p-valor guía la decisión al nivel de significación elegido.
+
+-   Para ANOVA: comprobar homogeneidad (Levene) y, si procede, comparaciones múltiples (Tukey).
+
+-   Para justificar inferencia clásica: comprobar supuestos como normalidad y aleatoriedad.
